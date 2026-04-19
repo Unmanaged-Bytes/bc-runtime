@@ -1,0 +1,32 @@
+Source: libbc-runtime
+Section: libdevel
+Priority: optional
+Maintainer: Younes Benmoussa <younes.benmoussa@pm.me>
+Build-Depends: debhelper-compat (= 13),
+               meson (>= 1.0),
+               ninja-build,
+               pkg-config,
+               libbc-core-dev (>= 1.0.0),
+               libbc-allocators-dev (>= 1.0.0),
+               libbc-concurrency-dev (>= 1.0.0),
+               libcmocka-dev
+Standards-Version: 4.6.2
+Homepage: https://unmanaged-bytes.com/
+Vcs-Git: https://github.com/Unmanaged-Bytes/bc-runtime.git
+Vcs-Browser: https://github.com/Unmanaged-Bytes/bc-runtime
+
+Package: libbc-runtime-dev
+Architecture: amd64
+Multi-Arch: same
+Depends: ${misc:Depends},
+         libbc-core-dev (>= 1.0.0),
+         libbc-allocators-dev (>= 1.0.0),
+         libbc-concurrency-dev (>= 1.0.0)
+Description: bc-* ecosystem application runtime (development files)
+ Application-lifecycle runtime: init/run/cleanup flow, layered
+ configuration, structured logging, metrics (counter / gauge /
+ histogram), and a CLI framework for argv parsing and subcommand
+ dispatch.
+ .
+ This package ships the static library, public headers, and
+ pkg-config descriptor required to build against bc-runtime.

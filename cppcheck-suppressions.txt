@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: MIT
+//
+// False-positive unusedFunction suppressions for bc-runtime.
+
+// --- bc-core inline helpers used by external consumers only ---
+unusedFunction:*/bc_core_math.h
+
+// --- Public API consumed by external tools ---
+unusedFunction:*/bc_runtime_accessors.c
+unusedFunction:*/bc_runtime_config.c
+unusedFunction:*/bc_runtime_cli.c
+
+// --- Linker wrap hooks in test files ---
+unusedFunction:*/test_bc_runtime_config_errors.c
+unusedFunction:*/test_bc_runtime_lifecycle_errors.c
+unusedFunction:*/test_bc_runtime_log_edge_cases.c
+unusedFunction:*/test_bc_runtime_log_errors.c
+unusedFunction:*/test_bc_runtime_metrics_errors.c
+unusedFunction:*tests/*_wrap.c
+unusedFunction:*/tests/*_wrap.c
+
+// --- Cppcheck informational noise ---
+missingIncludeSystem:*
+normalCheckLevelMaxBranches:*
+checkersReport
+unmatchedSuppression
