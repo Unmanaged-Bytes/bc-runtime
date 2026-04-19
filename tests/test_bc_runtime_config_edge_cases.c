@@ -176,7 +176,7 @@ static void test_config_get_integer_exact_long_max(void** state)
     struct test_fixture* fixture = *state;
 
     char exact_max[64];
-    snprintf(exact_max, sizeof(exact_max), "%ld", __LONG_MAX__);
+    snprintf(exact_max, sizeof(exact_max), "%lld", (long long)__LONG_MAX__);
 
     bc_runtime_config_store_set(fixture->config_store, "exact_max", exact_max);
     bc_runtime_config_store_sort(fixture->config_store);
@@ -194,7 +194,7 @@ static void test_config_get_integer_exact_long_min(void** state)
     struct test_fixture* fixture = *state;
 
     char exact_min[64];
-    snprintf(exact_min, sizeof(exact_min), "%ld", LONG_MIN);
+    snprintf(exact_min, sizeof(exact_min), "%lld", (long long)LONG_MIN);
 
     bc_runtime_config_store_set(fixture->config_store, "exact_min", exact_min);
     bc_runtime_config_store_sort(fixture->config_store);
@@ -487,7 +487,7 @@ static void test_config_get_integer_safe_add_overflow(void** state)
     struct test_fixture* fixture = *state;
 
     char number[32];
-    snprintf(number, sizeof(number), "%ld8", __LONG_MAX__);
+    snprintf(number, sizeof(number), "%lld8", (long long)__LONG_MAX__);
 
     bc_runtime_config_store_set(fixture->config_store, "add_overflow", number);
     bc_runtime_config_store_sort(fixture->config_store);
