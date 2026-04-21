@@ -1,6 +1,7 @@
 bc_runtime_lib = static_library('bc-runtime',
     'app/bc_runtime_lifecycle.c',
     'app/bc_runtime_accessors.c',
+    'app/bc_runtime_error_collector.c',
     'cli/bc_runtime_cli.c',
     'config/bc_runtime_config.c',
     'log/bc_runtime_log.c',

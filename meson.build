@@ -67,7 +67,12 @@ pkg.generate(
   extra_cflags : ['-I${includedir}/bc'],
 )
 
-install_headers('include/public/bc_runtime.h', 'include/public/bc_runtime_cli.h', subdir : 'bc')
+install_headers(
+  'include/public/bc_runtime.h',
+  'include/public/bc_runtime_cli.h',
+  'include/public/bc_runtime_error_collector.h',
+  subdir : 'bc'
+)
 
 if get_option('tests')
   subdir('tests')

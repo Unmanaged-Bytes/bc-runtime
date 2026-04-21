@@ -9,6 +9,7 @@ unusedFunction:*/bc_core_math.h
 unusedFunction:*/bc_runtime_accessors.c
 unusedFunction:*/bc_runtime_config.c
 unusedFunction:*/bc_runtime_cli.c
+unusedFunction:*/bc_runtime_error_collector.c
 
 // --- Linker wrap hooks in test files ---
 unusedFunction:*/test_bc_runtime_config_errors.c
