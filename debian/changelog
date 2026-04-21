@@ -1,3 +1,14 @@
+libbc-runtime (1.1.0-1) stable; urgency=medium
+
+  * feat(error_collector): add `bc_runtime_error_collector_*` public API.
+    Thread-safe (atomic_flag-protected append), inlined 512-byte path
+    buffer per record, optional `stage` field. Replaces the three
+    separate collector implementations previously duplicated in
+    bc-seek, bc-hash and bc-duplicate (~300 LOC eliminated across
+    consumers).
+
+ -- Younes Benmoussa <younes.benmoussa@pm.me>  Tue, 21 Apr 2026 21:40:00 +0000
+
 libbc-runtime (1.0.0-1) stable; urgency=medium
 
   * Initial public release.
