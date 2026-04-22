@@ -5,10 +5,17 @@
 // --- bc-core inline helpers used by external consumers only ---
 unusedFunction:*/bc_core_math.h
 
-// --- Public API consumed by external tools ---
+// --- Public API functions in bc-runtime sources themselves ---
+// cppcheck analyses the lib in isolation via compile_commands.json
+// (lib sources only, not tests), so public functions consumed by
+// downstream tools (bc-hash, bc-seek, bc-duplicate, bc-count) appear
+// unused.
+unusedFunction:*/src/app/*.c
+unusedFunction:*/src/cli/*.c
+unusedFunction:*/src/config/*.c
+unusedFunction:*/src/log/*.c
+unusedFunction:*/src/metrics/*.c
 unusedFunction:*/bc_runtime_accessors.c
-unusedFunction:*/bc_runtime_config.c
-unusedFunction:*/bc_runtime_cli.c
 unusedFunction:*/bc_runtime_error_collector.c
 
 // --- Linker wrap hooks in test files ---
