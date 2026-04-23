@@ -9,6 +9,15 @@
 #include <time.h>
 #include <unistd.h>
 
+static const char* const LEVEL_PREFIXES[] = {
+    "[ERROR]",
+    "[WARN ]",
+    "[INFO ]",
+    "[DEBUG]",
+};
+
+#define LEVEL_PREFIX_LENGTH 7
+
 bool bc_runtime_log_format_timestamp(char* buffer, size_t buffer_size, size_t* out_length)
 {
     if (buffer_size < 29) {
@@ -68,6 +77,47 @@ bool bc_runtime_log_format_timestamp(char* buffer, size_t buffer_size, size_t* o
     return true;
 }
 
+static bool format_record_into_buffer(bc_runtime_log_level_t level, const char* message,
+                                      char* buffer, size_t capacity, size_t* out_length)
+{
+    size_t position = 0;
+
+    size_t timestamp_length = 0;
+    if (!bc_runtime_log_format_timestamp(buffer, capacity, &timestamp_length)) {
+        return false;
+    }
+    position = timestamp_length;
+
+    if (position + 1U + LEVEL_PREFIX_LENGTH + 1U + 1U > capacity) {
+        return false;
+    }
+
+    buffer[position++] = ' ';
+    if (!bc_core_copy(buffer + position, LEVEL_PREFIXES[(int)level], LEVEL_PREFIX_LENGTH)) {
+        return false;
+    }
+    position += LEVEL_PREFIX_LENGTH;
+    buffer[position++] = ' ';
+
+    size_t message_length = 0;
+    if (!bc_core_length(message, 0, &message_length)) {
+        return false;
+    }
+
+    size_t max_message = capacity - position - 1U;
+    if (message_length > max_message) {
+        message_length = max_message;
+    }
+    if (!bc_core_copy(buffer + position, message, message_length)) {
+        return false;
+    }
+    position += message_length;
+    buffer[position++] = '\n';
+
+    *out_length = position;
+    return true;
+}
+
 bool bc_runtime_log(const bc_runtime_t* application, bc_runtime_log_level_t level, const char* message)
 {
     int current_level = atomic_load_explicit(&application->log_level, memory_order_relaxed);
@@ -75,45 +125,19 @@ bool bc_runtime_log(const bc_runtime_t* application, bc_runtime_log_level_t leve
         return true;
     }
 
-    char formatted[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
-    size_t position = 0;
-
-    size_t timestamp_length = 0;
-    if (!bc_runtime_log_format_timestamp(formatted, sizeof(formatted), &timestamp_length)) {
-        return false;
-    }
-    position = timestamp_length;
-
-    formatted[position++] = ' ';
-
-    static const char* const level_prefixes[] = {
-        "[ERROR]",
-        "[WARN ]",
-        "[INFO ]",
-        "[DEBUG]",
-    };
-    const char* prefix = level_prefixes[(int)level];
-    bc_core_copy(formatted + position, prefix, 7);
-    position += 7;
-
-    formatted[position++] = ' ';
-
-    size_t message_length = 0;
-    if (!bc_core_length(message, 0, &message_length)) {
+    char record[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
+    size_t record_length = 0;
+    if (!format_record_into_buffer(level, message, record, sizeof(record), &record_length)) {
         return false;
     }
 
-    size_t max_message = sizeof(formatted) - position - 1;
-    if (message_length > max_message) {
-        message_length = max_message;
+    char scratch[8];
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init(&writer, STDERR_FILENO, scratch, sizeof(scratch))) {
+        return false;
     }
-    bc_core_copy(formatted + position, message, message_length);
-    position += message_length;
-
-    formatted[position++] = '\n';
-
-    ssize_t written = write(STDERR_FILENO, formatted, position);
-    if (written < 0 || (size_t)written != position) {
+    bool ok = bc_core_writer_write_bytes(&writer, record, record_length);
+    if (!bc_core_writer_destroy(&writer) || !ok) {
         return false;
     }
 
@@ -159,50 +183,72 @@ bool bc_runtime_log_to_buffer(bc_runtime_log_buffer_t* buffer, bc_runtime_log_le
         return true;
     }
 
-    char formatted[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
-    size_t position = 0;
-
-    size_t timestamp_length = 0;
-    if (!bc_runtime_log_format_timestamp(formatted, sizeof(formatted), &timestamp_length)) {
+    char record[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
+    size_t record_length = 0;
+    if (!format_record_into_buffer(level, message, record, sizeof(record), &record_length)) {
         return false;
     }
-    position = timestamp_length;
 
-    formatted[position++] = ' ';
-
-    static const char* const level_prefixes[] = {
-        "[ERROR]",
-        "[WARN ]",
-        "[INFO ]",
-        "[DEBUG]",
-    };
-    bc_core_copy(formatted + position, level_prefixes[(int)level], 7);
-    position += 7;
-
-    formatted[position++] = ' ';
-
-    size_t message_length = 0;
-    if (!bc_core_length(message, 0, &message_length)) {
-        return false;
-    }
-    size_t max_message = sizeof(formatted) - position - 1;
-    if (message_length > max_message) {
-        message_length = max_message;
-    }
-    bc_core_copy(formatted + position, message, message_length);
-    position += message_length;
-
-    formatted[position++] = '\n';
-
-    if (buffer->write_position + position > buffer->capacity) {
+    if (buffer->write_position + record_length > buffer->capacity) {
         buffer->overflow_count++;
         return true;
     }
 
-    bc_core_copy(buffer->data + buffer->write_position, formatted, position);
-    buffer->write_position += position;
+    if (!bc_core_copy(buffer->data + buffer->write_position, record, record_length)) {
+        return false;
+    }
+    buffer->write_position += record_length;
     buffer->entry_count++;
 
+    return true;
+}
+
+static bool drain_write_overflow_warning(size_t overflow_count)
+{
+    char record[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init(&writer, STDERR_FILENO, record, sizeof(record))) {
+        return false;
+    }
+
+    char timestamp[32];
+    size_t timestamp_length = 0;
+    if (!bc_runtime_log_format_timestamp(timestamp, sizeof(timestamp), &timestamp_length)) {
+        return false;
+    }
+
+    if (!bc_core_writer_write_bytes(&writer, timestamp, timestamp_length)) {
+        return false;
+    }
+    if (!bc_core_writer_write_char(&writer, ' ')) {
+        return false;
+    }
+    if (!bc_core_writer_write_bytes(&writer, LEVEL_PREFIXES[(int)BC_RUNTIME_LOG_LEVEL_WARN], LEVEL_PREFIX_LENGTH)) {
+        return false;
+    }
+    if (!bc_core_writer_write_char(&writer, ' ')) {
+        return false;
+    }
+    if (!bc_core_writer_write_uint64_dec(&writer, (uint64_t)overflow_count)) {
+        return false;
+    }
+    if (!BC_CORE_WRITER_PUTS(&writer, " log messages lost (buffer full)\n")) {
+        return false;
+    }
+    return bc_core_writer_destroy(&writer);
+}
+
+static bool drain_dump_buffer(const char* data, size_t length)
+{
+    char scratch[8];
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init(&writer, STDERR_FILENO, scratch, sizeof(scratch))) {
+        return false;
+    }
+    bool ok = bc_core_writer_write_bytes(&writer, data, length);
+    if (!bc_core_writer_destroy(&writer) || !ok) {
+        return false;
+    }
     return true;
 }
 
@@ -210,58 +256,19 @@ bool bc_runtime_log_drain(const bc_runtime_t* application, bc_runtime_log_buffer
 {
     bool all_succeeded = true;
 
-    for (size_t i = 0; i < buffer_count; i++) {
-        bc_runtime_log_buffer_t* buffer = buffers[i];
+    for (size_t buffer_index = 0; buffer_index < buffer_count; buffer_index++) {
+        bc_runtime_log_buffer_t* buffer = buffers[buffer_index];
 
         if (buffer->overflow_count > 0) {
-            char warning[BC_RUNTIME_LOG_BUFFER_STACK_SIZE] = {0};
-            size_t warning_position = 0;
-
-            size_t timestamp_length = 0;
-            if (!bc_runtime_log_format_timestamp(warning, sizeof(warning), &timestamp_length)) {
-                all_succeeded = false;
-                continue;
-            }
-            warning_position = timestamp_length;
-            warning[warning_position++] = ' ';
-
-            bc_core_copy(warning + warning_position, "[WARN ]", 7);
-            warning_position += 7;
-            warning[warning_position++] = ' ';
-
-            size_t remaining = buffer->overflow_count;
-            char count_digits[21];
-            size_t count_digit_length = 0;
-            while (remaining > 0) {
-                count_digits[count_digit_length++] = (char)('0' + (remaining % 10));
-                remaining /= 10;
-            }
-            for (size_t left = 0, right = count_digit_length - 1; left < right; left++, right--) {
-                char temporary = count_digits[left];
-                count_digits[left] = count_digits[right];
-                count_digits[right] = temporary;
-            }
-
-            bc_core_copy(warning + warning_position, count_digits, count_digit_length);
-            warning_position += count_digit_length;
-
-            const char suffix[] = " log messages lost (buffer full)\n";
-            size_t suffix_length = sizeof(suffix) - 1;
-            bc_core_copy(warning + warning_position, suffix, suffix_length);
-            warning_position += suffix_length;
-
-            ssize_t written = write(STDERR_FILENO, warning, warning_position);
-            if (written < 0 || (size_t)written != warning_position) {
+            if (!drain_write_overflow_warning(buffer->overflow_count)) {
                 all_succeeded = false;
             }
         }
 
         if (buffer->write_position > 0) {
-            ssize_t written = write(STDERR_FILENO, buffer->data, buffer->write_position);
-            if (written < 0 || (size_t)written != buffer->write_position) {
+            if (!drain_dump_buffer(buffer->data, buffer->write_position)) {
                 all_succeeded = false;
             }
-
             atomic_fetch_add_explicit(&((bc_runtime_t*)application)->log_messages_written, buffer->entry_count, memory_order_relaxed);
         }
 
