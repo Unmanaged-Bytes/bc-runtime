@@ -10,6 +10,7 @@ simple_tests = [
     'metrics',
     'config_edge_cases',
     'cli',
+    'error_collector',
 ]
 
 foreach name : simple_tests
