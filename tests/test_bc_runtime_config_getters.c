@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "bc_allocators.h"
+#include <stdlib.h>
 #include "bc_runtime_internal.h"
 #include "bc_core.h"
 

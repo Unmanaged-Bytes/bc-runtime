@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #define _POSIX_C_SOURCE 200809L
 #include "bc_allocators.h"
+#include <stdlib.h>
 #include "bc_runtime_internal.h"
 
 #include <stdio.h>
