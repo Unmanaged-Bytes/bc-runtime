@@ -217,6 +217,38 @@ static void test_log_drain_overflow_fails_write(void** state)
     bc_runtime_destroy(application);
 }
 
+static void test_log_drain_overflow_fails_clock_gettime(void** state)
+{
+    (void)state;
+
+    bc_runtime_config_t config = {
+        .log_level = BC_RUNTIME_LOG_LEVEL_DEBUG,
+    };
+    bc_runtime_callbacks_t callbacks = {0};
+    bc_runtime_t* application = NULL;
+
+    bool created = bc_runtime_create(&config, &callbacks, NULL, &application);
+    assert_true(created);
+
+    bc_runtime_log_buffer_t* buffer = NULL;
+    bool buffer_created = bc_runtime_log_buffer_create(application, 16, &buffer);
+    assert_true(buffer_created);
+
+    bc_runtime_log_to_buffer(buffer, BC_RUNTIME_LOG_LEVEL_ERROR, "this message is way too long for a 16 byte buffer and will overflow");
+    assert_true(buffer->overflow_count > 0);
+
+    wrap_clock_gettime_fail = true;
+
+    bc_runtime_log_buffer_t* buffers[] = {buffer};
+    bool drain_result = bc_runtime_log_drain(application, buffers, 1);
+    assert_false(drain_result);
+
+    wrap_clock_gettime_fail = false;
+
+    bc_runtime_log_buffer_destroy(buffer);
+    bc_runtime_destroy(application);
+}
+
 static void test_log_commun_length_fails(void** state)
 {
     (void)state;
@@ -316,6 +348,7 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_log_to_buffer_fails_clock_gettime, test_setup, test_teardown),
         cmocka_unit_test_setup_teardown(test_log_drain_fails_write, test_setup, test_teardown),
         cmocka_unit_test_setup_teardown(test_log_drain_overflow_fails_write, test_setup, test_teardown),
+        cmocka_unit_test_setup_teardown(test_log_drain_overflow_fails_clock_gettime, test_setup, test_teardown),
         cmocka_unit_test_setup_teardown(test_log_commun_length_fails, test_setup, test_teardown),
         cmocka_unit_test_setup_teardown(test_log_to_buffer_commun_length_fails, test_setup, test_teardown),
         cmocka_unit_test_setup_teardown(test_log_buffer_create_pool_allocate_buffer_struct_fails, test_setup, test_teardown),

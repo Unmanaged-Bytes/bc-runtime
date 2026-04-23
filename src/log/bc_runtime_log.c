@@ -214,11 +214,14 @@ bool bc_runtime_log_drain(const bc_runtime_t* application, bc_runtime_log_buffer
         bc_runtime_log_buffer_t* buffer = buffers[i];
 
         if (buffer->overflow_count > 0) {
-            char warning[BC_RUNTIME_LOG_BUFFER_STACK_SIZE];
+            char warning[BC_RUNTIME_LOG_BUFFER_STACK_SIZE] = {0};
             size_t warning_position = 0;
 
             size_t timestamp_length = 0;
-            bc_runtime_log_format_timestamp(warning, sizeof(warning), &timestamp_length);
+            if (!bc_runtime_log_format_timestamp(warning, sizeof(warning), &timestamp_length)) {
+                all_succeeded = false;
+                continue;
+            }
             warning_position = timestamp_length;
             warning[warning_position++] = ' ';
 
