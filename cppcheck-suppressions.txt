@@ -17,6 +17,16 @@ unusedFunction:*/src/log/*.c
 unusedFunction:*/src/metrics/*.c
 unusedFunction:*/bc_runtime_accessors.c
 unusedFunction:*/bc_runtime_error_collector.c
+// cppcheck 2.13 (Ubuntu 24.04 CI) does not treat `*` as matching an
+// empty path segment, so compile_commands.json with paths like
+// `src/config/foo.c` (no leading directory) escapes the patterns
+// above. Mirror them without the `*/` prefix so both 2.13 and 2.17+
+// are covered.
+unusedFunction:src/app/*.c
+unusedFunction:src/cli/*.c
+unusedFunction:src/config/*.c
+unusedFunction:src/log/*.c
+unusedFunction:src/metrics/*.c
 
 // --- Linker wrap hooks in test files ---
 unusedFunction:*/test_bc_runtime_config_errors.c

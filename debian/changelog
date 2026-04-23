@@ -1,3 +1,13 @@
+libbc-runtime (1.1.2-1) stable; urgency=medium
+
+  * chore(cppcheck): mirror src/<dir>/*.c suppressions without the `*/`
+    prefix so cppcheck 2.13 (Ubuntu 24.04 runner) matches the same
+    paths as 2.17+ (local). 2.13 did not expand `*` across an empty
+    leading segment, so `src/config/foo.c` escaped `*/src/config/*.c`
+    and tripped the unusedFunction check on get_integer/get_boolean.
+
+ -- Younes Benmoussa <younes.benmoussa@pm.me>  Thu, 23 Apr 2026 10:50:00 +0100
+
 libbc-runtime (1.1.1-1) stable; urgency=medium
 
   * test(fuzz): replace config smoke with real libFuzzer harnesses
