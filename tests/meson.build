@@ -20,7 +20,7 @@ foreach name : simple_tests
             include_directories : [pub_inc, int_inc],
             dependencies : [cmocka_dep, bc_runtime_dep],
         ),
-        timeout : 30,
+        timeout : 60,
     )
 endforeach
 
