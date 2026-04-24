@@ -49,7 +49,8 @@ static char* create_temp_file(const char* content)
     if (content != NULL) {
         size_t length = strlen(content);
         if (length > 0) {
-            write(fd, content, length);
+            ssize_t written = write(fd, content, length);
+            (void)written;
         }
     }
     close(fd);
