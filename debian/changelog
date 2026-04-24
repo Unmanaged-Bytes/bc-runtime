@@ -1,3 +1,20 @@
+libbc-runtime (1.2.0-1) stable; urgency=medium
+
+  * refactor(log): migrer bc_runtime_log + log_drain sur bc_core_writer
+    (Phase 2.5 audit 2026-04-23). Factoriser format_record_into_buffer.
+    write(2) atomique per-record, <= PIPE_BUF. API inchangee.
+  * refactor(error_collector): migrer flush_to_stderr sur bc_core_writer.
+    Elimine fprintf/stdio du hot path.
+  * test(error_collector): suite unitaire cmocka complete.
+  * fix(log): checker le retour de format_timestamp dans log_drain (P1).
+  * ci: ajouter release+test et valgrind memcheck (P1).
+  * test(memcheck): bumper simple_tests timeout 30->60s pour accomoder
+    competition parallele valgrind.
+  * docs: clarifier l'invariant log sink.
+  * Requires libbc-core-dev >= 1.4.0 (module I/O writer/reader/fmt).
+
+ -- Younes Benmoussa <younes.benmoussa@pm.me>  Fri, 24 Apr 2026 09:30:00 +0100
+
 libbc-runtime (1.1.2-1) stable; urgency=medium
 
   * chore(cppcheck): mirror src/<dir>/*.c suppressions without the `*/`

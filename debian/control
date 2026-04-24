@@ -6,7 +6,7 @@ Build-Depends: debhelper-compat (= 13),
                meson (>= 1.0),
                ninja-build,
                pkg-config,
-               libbc-core-dev (>= 1.3.0),
+               libbc-core-dev (>= 1.4.0),
                libbc-allocators-dev (>= 1.2.0),
                libbc-concurrency-dev (>= 1.1.0),
                libcmocka-dev
@@ -19,7 +19,7 @@ Package: libbc-runtime-dev
 Architecture: amd64
 Multi-Arch: same
 Depends: ${misc:Depends},
-         libbc-core-dev (>= 1.3.0),
+         libbc-core-dev (>= 1.4.0),
          libbc-allocators-dev (>= 1.2.0),
          libbc-concurrency-dev (>= 1.1.0)
 Description: bc-* ecosystem application runtime (development files)
