@@ -20,7 +20,7 @@ struct stderr_capture {
 static void stderr_capture_start(struct stderr_capture* capture)
 {
     capture->saved_stderr_fd = dup(STDERR_FILENO);
-    pipe2(capture->pipe_fds, O_NONBLOCK);
+    int _pfd_rc = pipe2(capture->pipe_fds, O_NONBLOCK); (void)_pfd_rc;
     dup2(capture->pipe_fds[1], STDERR_FILENO);
 }
 
