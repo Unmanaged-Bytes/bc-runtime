@@ -97,7 +97,7 @@ static void test_get_metrics_config_entries_count(void** state)
     int fd = mkstemp(temp_path);
     assert_true(fd >= 0);
     const char* content = "alpha = one\nbeta = two\ngamma = three\n";
-    write(fd, content, strlen(content));
+    ssize_t _w = write(fd, content, strlen(content)); (void)_w;
     close(fd);
 
     bc_runtime_config_t config = {
