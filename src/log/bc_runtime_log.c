@@ -77,8 +77,7 @@ bool bc_runtime_log_format_timestamp(char* buffer, size_t buffer_size, size_t* o
     return true;
 }
 
-static bool format_record_into_buffer(bc_runtime_log_level_t level, const char* message,
-                                      char* buffer, size_t capacity, size_t* out_length)
+static bool format_record_into_buffer(bc_runtime_log_level_t level, const char* message, char* buffer, size_t capacity, size_t* out_length)
 {
     size_t position = 0;
 
@@ -229,7 +228,7 @@ static bool drain_write_overflow_warning(size_t overflow_count)
     if (!bc_core_writer_write_char(&writer, ' ')) {
         return false;
     }
-    if (!bc_core_writer_write_uint64_dec(&writer, (uint64_t)overflow_count)) {
+    if (!bc_core_writer_write_unsigned_integer_64_decimal(&writer, (uint64_t)overflow_count)) {
         return false;
     }
     if (!BC_CORE_WRITER_PUTS(&writer, " log messages lost (buffer full)\n")) {
