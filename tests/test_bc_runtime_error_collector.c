@@ -51,8 +51,7 @@ static void test_count_is_zero_on_fresh_collector(void** state)
 static void test_append_single_record_increments_count_to_one(void** state)
 {
     const collector_fixture_t* fixture = *state;
-    assert_true(bc_runtime_error_collector_append(
-        fixture->collector, fixture->memory_context, "/tmp/foo", "open", ENOENT));
+    assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, "/tmp/foo", "open", ENOENT));
     assert_int_equal(bc_runtime_error_collector_count(fixture->collector), 1U);
 }
 
@@ -62,8 +61,7 @@ static void test_append_multiple_records_increments_count(void** state)
     for (size_t index = 0U; index < 17U; ++index) {
         char path[32];
         snprintf(path, sizeof(path), "/tmp/file_%zu", index);
-        assert_true(bc_runtime_error_collector_append(
-            fixture->collector, fixture->memory_context, path, "read", EIO));
+        assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, path, "read", EIO));
     }
     assert_int_equal(bc_runtime_error_collector_count(fixture->collector), 17U);
 }
@@ -74,26 +72,22 @@ static void test_append_truncates_excessively_long_path(void** state)
     char very_long_path[4096];
     memset(very_long_path, 'x', sizeof(very_long_path) - 1U);
     very_long_path[sizeof(very_long_path) - 1U] = '\0';
-    assert_true(bc_runtime_error_collector_append(
-        fixture->collector, fixture->memory_context, very_long_path, "stat", EACCES));
+    assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, very_long_path, "stat", EACCES));
     assert_int_equal(bc_runtime_error_collector_count(fixture->collector), 1U);
 }
 
 static void test_append_accepts_null_stage(void** state)
 {
     const collector_fixture_t* fixture = *state;
-    assert_true(bc_runtime_error_collector_append(
-        fixture->collector, fixture->memory_context, "/tmp/path", NULL, ENOENT));
+    assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, "/tmp/path", NULL, ENOENT));
     assert_int_equal(bc_runtime_error_collector_count(fixture->collector), 1U);
 }
 
 static void test_flush_to_stderr_emits_one_line_per_record(void** state)
 {
     const collector_fixture_t* fixture = *state;
-    assert_true(bc_runtime_error_collector_append(
-        fixture->collector, fixture->memory_context, "/a", "open", ENOENT));
-    assert_true(bc_runtime_error_collector_append(
-        fixture->collector, fixture->memory_context, "/b", "read", EIO));
+    assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, "/a", "open", ENOENT));
+    assert_true(bc_runtime_error_collector_append(fixture->collector, fixture->memory_context, "/b", "read", EIO));
 
     int pipe_fds[2];
     assert_int_equal(pipe(pipe_fds), 0);
@@ -126,7 +120,7 @@ static void test_flush_to_stderr_emits_one_line_per_record(void** state)
 }
 
 #define CONCURRENT_APPEND_THREAD_COUNT 8
-#define CONCURRENT_APPEND_PER_THREAD   64
+#define CONCURRENT_APPEND_PER_THREAD 64
 
 typedef struct concurrent_context {
     bc_runtime_error_collector_t* collector;
@@ -139,8 +133,7 @@ static void* append_entry(void* argument)
     concurrent_context_t* context = (concurrent_context_t*)argument;
     pthread_barrier_wait(context->barrier);
     for (size_t index = 0U; index < CONCURRENT_APPEND_PER_THREAD; ++index) {
-        bc_runtime_error_collector_append(
-            context->collector, context->memory_context, "/concurrent", "append", EAGAIN);
+        bc_runtime_error_collector_append(context->collector, context->memory_context, "/concurrent", "append", EAGAIN);
     }
     return NULL;
 }
@@ -157,37 +150,27 @@ static void test_concurrent_append_is_race_free(void** state)
         contexts[thread_index].collector = fixture->collector;
         contexts[thread_index].memory_context = fixture->memory_context;
         contexts[thread_index].barrier = &barrier;
-        assert_int_equal(
-            pthread_create(&threads[thread_index], NULL, append_entry, &contexts[thread_index]),
-            0);
+        assert_int_equal(pthread_create(&threads[thread_index], NULL, append_entry, &contexts[thread_index]), 0);
     }
     for (size_t thread_index = 0U; thread_index < CONCURRENT_APPEND_THREAD_COUNT; ++thread_index) {
         assert_int_equal(pthread_join(threads[thread_index], NULL), 0);
     }
     pthread_barrier_destroy(&barrier);
 
-    assert_int_equal(
-        bc_runtime_error_collector_count(fixture->collector),
-        (size_t)(CONCURRENT_APPEND_THREAD_COUNT * CONCURRENT_APPEND_PER_THREAD));
+    assert_int_equal(bc_runtime_error_collector_count(fixture->collector),
+                     (size_t)(CONCURRENT_APPEND_THREAD_COUNT * CONCURRENT_APPEND_PER_THREAD));
 }
 
 int main(void)
 {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test_setup_teardown(
-            test_count_is_zero_on_fresh_collector, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_append_single_record_increments_count_to_one, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_append_multiple_records_increments_count, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_append_truncates_excessively_long_path, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_append_accepts_null_stage, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_flush_to_stderr_emits_one_line_per_record, setup_collector, teardown_collector),
-        cmocka_unit_test_setup_teardown(
-            test_concurrent_append_is_race_free, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_count_is_zero_on_fresh_collector, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_append_single_record_increments_count_to_one, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_append_multiple_records_increments_count, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_append_truncates_excessively_long_path, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_append_accepts_null_stage, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_flush_to_stderr_emits_one_line_per_record, setup_collector, teardown_collector),
+        cmocka_unit_test_setup_teardown(test_concurrent_append_is_race_free, setup_collector, teardown_collector),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

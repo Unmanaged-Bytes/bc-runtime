@@ -11,14 +11,14 @@
 #define FUZZ_STAGE_CAPACITY 128
 #define FUZZ_PATH_CAPACITY 1024
 
-static bool decode_record(const uint8_t* data, size_t size, size_t* position, int* out_errno_value, char* stage_buffer, size_t stage_capacity,
-                          char* path_buffer, size_t path_capacity, bool* out_has_stage)
+static bool decode_record(const uint8_t* data, size_t size, size_t* position, int* out_errno_value, char* stage_buffer,
+                          size_t stage_capacity, char* path_buffer, size_t path_capacity, bool* out_has_stage)
 {
     if (*position + 7 > size) {
         return false;
     }
-    const uint32_t errno_bits = (uint32_t)data[*position] | ((uint32_t)data[*position + 1] << 8) | ((uint32_t)data[*position + 2] << 16)
-                                | ((uint32_t)data[*position + 3] << 24);
+    const uint32_t errno_bits = (uint32_t)data[*position] | ((uint32_t)data[*position + 1] << 8) | ((uint32_t)data[*position + 2] << 16) |
+                                ((uint32_t)data[*position + 3] << 24);
     *out_errno_value = (int)errno_bits;
     *position += 4;
 
@@ -69,7 +69,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     for (;;) {
         int errno_value = 0;
         bool has_stage = false;
-        if (!decode_record(data, size, &position, &errno_value, stage_buffer, sizeof(stage_buffer), path_buffer, sizeof(path_buffer), &has_stage)) {
+        if (!decode_record(data, size, &position, &errno_value, stage_buffer, sizeof(stage_buffer), path_buffer, sizeof(path_buffer),
+                           &has_stage)) {
             break;
         }
         const char* stage_ptr = has_stage ? stage_buffer : NULL;
