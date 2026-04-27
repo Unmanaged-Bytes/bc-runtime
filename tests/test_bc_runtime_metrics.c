@@ -22,7 +22,8 @@ struct stderr_capture {
 static void stderr_capture_start(struct stderr_capture* capture)
 {
     capture->saved_stderr_fd = dup(STDERR_FILENO);
-    int _pfd_rc = pipe2(capture->pipe_fds, O_NONBLOCK); (void)_pfd_rc;
+    int _pfd_rc = pipe2(capture->pipe_fds, O_NONBLOCK);
+    (void)_pfd_rc;
     dup2(capture->pipe_fds[1], STDERR_FILENO);
 }
 
@@ -97,7 +98,8 @@ static void test_get_metrics_config_entries_count(void** state)
     int fd = mkstemp(temp_path);
     assert_true(fd >= 0);
     const char* content = "alpha = one\nbeta = two\ngamma = three\n";
-    ssize_t _w = write(fd, content, strlen(content)); (void)_w;
+    ssize_t _w = write(fd, content, strlen(content));
+    (void)_w;
     close(fd);
 
     bc_runtime_config_t config = {

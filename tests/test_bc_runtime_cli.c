@@ -418,6 +418,102 @@ static void test_print_version(void** state)
     BC_UNUSED(fixture);
 }
 
+static void test_error_output_unknown_command(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "checksum", "/path"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 3, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: unknown command 'checksum'\n", error_buffer);
+}
+
+static void test_error_output_unknown_option(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "--nope=1", "hash", "--type=sha256", "/path"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 5, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: unknown option --nope\n", error_buffer);
+}
+
+static void test_error_output_missing_required(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "hash", "/path"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 3, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: missing required option --type\n", error_buffer);
+}
+
+static void test_error_output_invalid_enum(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "hash", "--type=md5", "/path"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 4, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: invalid value for --type: 'md5'\n", error_buffer);
+}
+
+static void test_error_output_positional_min_violation(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "hash", "--type=sha256"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 3, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: command 'hash' requires at least 1 positional argument(s)\n", error_buffer);
+}
+
+static void test_error_output_missing_command(void** state)
+{
+    struct fixture* fixture = *state;
+    char error_buffer[4096];
+    memset(error_buffer, 0, sizeof(error_buffer));
+    FILE* stream = fmemopen(error_buffer, sizeof(error_buffer), "w");
+    const char* argv[] = {"bc-test", "--threads=4"};
+    bc_runtime_cli_parsed_t parsed;
+
+    bc_runtime_cli_parse_status_t status = bc_runtime_cli_parse(&program_spec, 2, argv, fixture->store, &parsed, stream);
+    fclose(stream);
+
+    assert_int_equal(BC_RUNTIME_CLI_PARSE_ERROR, status);
+    assert_string_equal("bc-test: missing command\n", error_buffer);
+}
+
 int main(void)
 {
     const struct CMUnitTest tests[] = {
@@ -445,6 +541,12 @@ int main(void)
         cmocka_unit_test_setup_teardown(test_print_help_global_includes_command, setup, teardown),
         cmocka_unit_test_setup_teardown(test_print_help_command_includes_options, setup, teardown),
         cmocka_unit_test_setup_teardown(test_print_version, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_unknown_command, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_unknown_option, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_missing_required, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_invalid_enum, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_positional_min_violation, setup, teardown),
+        cmocka_unit_test_setup_teardown(test_error_output_missing_command, setup, teardown),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

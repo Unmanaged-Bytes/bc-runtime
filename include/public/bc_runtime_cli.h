@@ -69,7 +69,8 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
 
 void bc_runtime_cli_print_help_global(const bc_runtime_cli_program_spec_t* spec, FILE* stream);
 
-void bc_runtime_cli_print_help_command(const bc_runtime_cli_program_spec_t* spec, const bc_runtime_cli_command_spec_t* command, FILE* stream);
+void bc_runtime_cli_print_help_command(const bc_runtime_cli_program_spec_t* spec, const bc_runtime_cli_command_spec_t* command,
+                                       FILE* stream);
 
 void bc_runtime_cli_print_version(const bc_runtime_cli_program_spec_t* spec, FILE* stream);
 

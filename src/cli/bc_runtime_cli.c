@@ -4,12 +4,16 @@
 #include "bc_runtime_internal.h"
 
 #include "bc_core.h"
+#include "bc_core_cpu.h"
+#include "bc_core_format.h"
+#include "bc_core_io.h"
 
 #include <stdio.h>
 
 #define BC_RUNTIME_CLI_KEY_BUFFER_SIZE 256
 #define BC_RUNTIME_CLI_GLOBAL_PREFIX "global."
 #define BC_RUNTIME_CLI_GLOBAL_PREFIX_LENGTH 7
+#define BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE 4096
 
 static bool bc_runtime_cli_string_equal(const char* left, const char* right)
 {
@@ -43,7 +47,7 @@ static size_t bc_runtime_cli_string_length(const char* value)
 }
 
 static const bc_runtime_cli_option_spec_t* bc_runtime_cli_find_option(const bc_runtime_cli_option_spec_t* options, size_t option_count,
-                                                                     const char* name, size_t name_length)
+                                                                      const char* name, size_t name_length)
 {
     for (size_t index = 0; index < option_count; index++) {
         const bc_runtime_cli_option_spec_t* option = &options[index];
@@ -101,26 +105,26 @@ static bool bc_runtime_cli_value_is_integer(const char* value)
 
 static bool bc_runtime_cli_value_is_boolean(const char* value)
 {
-    return bc_runtime_cli_string_equal(value, "true") || bc_runtime_cli_string_equal(value, "false")
-           || bc_runtime_cli_string_equal(value, "1") || bc_runtime_cli_string_equal(value, "0")
-           || bc_runtime_cli_string_equal(value, "yes") || bc_runtime_cli_string_equal(value, "no");
+    return bc_runtime_cli_string_equal(value, "true") || bc_runtime_cli_string_equal(value, "false") ||
+           bc_runtime_cli_string_equal(value, "1") || bc_runtime_cli_string_equal(value, "0") ||
+           bc_runtime_cli_string_equal(value, "yes") || bc_runtime_cli_string_equal(value, "no");
 }
 
 static bool bc_runtime_cli_validate_value(const bc_runtime_cli_option_spec_t* option, const char* value)
 {
     switch (option->type) {
-        case BC_RUNTIME_CLI_OPTION_STRING:
-            return true;
-        case BC_RUNTIME_CLI_OPTION_ENUM:
-            return bc_runtime_cli_value_is_allowed(option, value);
-        case BC_RUNTIME_CLI_OPTION_INTEGER:
-            return bc_runtime_cli_value_is_integer(value);
-        case BC_RUNTIME_CLI_OPTION_BOOLEAN:
-            return bc_runtime_cli_value_is_boolean(value);
-        case BC_RUNTIME_CLI_OPTION_LIST:
-            return true;
-        case BC_RUNTIME_CLI_OPTION_FLAG:
-            return false;
+    case BC_RUNTIME_CLI_OPTION_STRING:
+        return true;
+    case BC_RUNTIME_CLI_OPTION_ENUM:
+        return bc_runtime_cli_value_is_allowed(option, value);
+    case BC_RUNTIME_CLI_OPTION_INTEGER:
+        return bc_runtime_cli_value_is_integer(value);
+    case BC_RUNTIME_CLI_OPTION_BOOLEAN:
+        return bc_runtime_cli_value_is_boolean(value);
+    case BC_RUNTIME_CLI_OPTION_LIST:
+        return true;
+    case BC_RUNTIME_CLI_OPTION_FLAG:
+        return false;
     }
     return false;
 }
@@ -142,6 +146,20 @@ static bool bc_runtime_cli_build_key(char* buffer, size_t buffer_size, const cha
     return true;
 }
 
+static void bc_runtime_cli_drain_writer_to_stream(bc_core_writer_t* writer, FILE* stream)
+{
+    const char* data = NULL;
+    size_t length = 0;
+    if (!bc_core_writer_buffer_data(writer, &data, &length)) {
+        return;
+    }
+    if (length > 0 && stream != NULL) {
+        (void)fwrite(data, 1, length, stream);
+        (void)fflush(stream);
+    }
+    (void)bc_core_writer_destroy(writer);
+}
+
 static bool bc_runtime_cli_apply_defaults(const bc_runtime_cli_option_spec_t* options, size_t option_count, const char* prefix,
                                           bc_runtime_config_store_t* store, const bool* seen_flags, const char* program_name,
                                           FILE* error_stream)
@@ -152,7 +170,15 @@ static bool bc_runtime_cli_apply_defaults(const bc_runtime_cli_option_spec_t* op
             continue;
         }
         if (option->required) {
-            fprintf(error_stream, "%s: missing required option --%s\n", program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": missing required option --");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+            }
             return false;
         }
         if (option->default_value == NULL) {
@@ -160,11 +186,27 @@ static bool bc_runtime_cli_apply_defaults(const bc_runtime_cli_option_spec_t* op
         }
         char key_buffer[BC_RUNTIME_CLI_KEY_BUFFER_SIZE];
         if (!bc_runtime_cli_build_key(key_buffer, sizeof(key_buffer), prefix, option->long_name)) {
-            fprintf(error_stream, "%s: option name too long: %s\n", program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": option name too long: ");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+            }
             return false;
         }
         if (!bc_runtime_config_store_set(store, key_buffer, option->default_value)) {
-            fprintf(error_stream, "%s: failed to store default for --%s\n", program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": failed to store default for --");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+            }
             return false;
         }
     }
@@ -218,7 +260,15 @@ static bool bc_runtime_cli_handle_assignment(bc_runtime_cli_parse_context_t* con
 {
     const bc_runtime_cli_option_spec_t* option = bc_runtime_cli_find_option(options, option_count, name, name_length);
     if (option == NULL) {
-        fprintf(context->error_stream, "%s: unknown option --%.*s\n", context->spec->program_name, (int)name_length, name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": unknown option --");
+            (void)bc_core_writer_write_bytes(&writer, name, name_length);
+            (void)bc_core_writer_write_char(&writer, '\n');
+            bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+        }
         return false;
     }
 
@@ -226,16 +276,40 @@ static bool bc_runtime_cli_handle_assignment(bc_runtime_cli_parse_context_t* con
 
     if (option->type == BC_RUNTIME_CLI_OPTION_FLAG) {
         if (has_value) {
-            fprintf(context->error_stream, "%s: option --%s does not take a value\n", context->spec->program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": option --");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_cstring(&writer, " does not take a value\n");
+                bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+            }
             return false;
         }
         char key_buffer[BC_RUNTIME_CLI_KEY_BUFFER_SIZE];
         if (!bc_runtime_cli_build_key(key_buffer, sizeof(key_buffer), prefix, option->long_name)) {
-            fprintf(context->error_stream, "%s: option name too long: %s\n", context->spec->program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": option name too long: ");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+            }
             return false;
         }
         if (!bc_runtime_config_store_set(context->store, key_buffer, "true")) {
-            fprintf(context->error_stream, "%s: failed to store --%s\n", context->spec->program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": failed to store --");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+            }
             return false;
         }
         seen_flags[option_index] = true;
@@ -243,27 +317,69 @@ static bool bc_runtime_cli_handle_assignment(bc_runtime_cli_parse_context_t* con
     }
 
     if (!has_value) {
-        fprintf(context->error_stream, "%s: option --%s requires a value\n", context->spec->program_name, option->long_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": option --");
+            (void)bc_core_writer_write_cstring(&writer, option->long_name);
+            (void)bc_core_writer_write_cstring(&writer, " requires a value\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+        }
         return false;
     }
 
     if (!bc_runtime_cli_validate_value(option, value)) {
-        fprintf(context->error_stream, "%s: invalid value for --%s: '%s'\n", context->spec->program_name, option->long_name, value);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": invalid value for --");
+            (void)bc_core_writer_write_cstring(&writer, option->long_name);
+            (void)bc_core_writer_write_cstring(&writer, ": '");
+            (void)bc_core_writer_write_cstring(&writer, value);
+            (void)bc_core_writer_write_cstring(&writer, "'\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+        }
         return false;
     }
 
     char key_buffer[BC_RUNTIME_CLI_KEY_BUFFER_SIZE];
     if (!bc_runtime_cli_build_key(key_buffer, sizeof(key_buffer), prefix, option->long_name)) {
-        fprintf(context->error_stream, "%s: option name too long: %s\n", context->spec->program_name, option->long_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": option name too long: ");
+            (void)bc_core_writer_write_cstring(&writer, option->long_name);
+            (void)bc_core_writer_write_char(&writer, '\n');
+            bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+        }
         return false;
     }
     if (option->type == BC_RUNTIME_CLI_OPTION_LIST) {
         if (!bc_runtime_config_store_append(context->store, key_buffer, value, BC_RUNTIME_CLI_LIST_SEPARATOR)) {
-            fprintf(context->error_stream, "%s: failed to store --%s\n", context->spec->program_name, option->long_name);
+            char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+            bc_core_writer_t writer;
+            if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+                (void)bc_core_writer_write_cstring(&writer, ": failed to store --");
+                (void)bc_core_writer_write_cstring(&writer, option->long_name);
+                (void)bc_core_writer_write_char(&writer, '\n');
+                bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+            }
             return false;
         }
     } else if (!bc_runtime_config_store_set(context->store, key_buffer, value)) {
-        fprintf(context->error_stream, "%s: failed to store --%s\n", context->spec->program_name, option->long_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, context->spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": failed to store --");
+            (void)bc_core_writer_write_cstring(&writer, option->long_name);
+            (void)bc_core_writer_write_char(&writer, '\n');
+            bc_runtime_cli_drain_writer_to_stream(&writer, context->error_stream);
+        }
         return false;
     }
     seen_flags[option_index] = true;
@@ -297,14 +413,27 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
     if (spec->global_option_count > 64 || (spec->commands != NULL && spec->command_count > 0)) {
         for (size_t index = 0; index < spec->command_count; index++) {
             if (spec->commands[index].option_count > 64) {
-                fprintf(error_stream, "%s: internal error: too many options in command '%s'\n", spec->program_name,
-                        spec->commands[index].name);
+                char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+                bc_core_writer_t writer;
+                if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+                    (void)bc_core_writer_write_cstring(&writer, ": internal error: too many options in command '");
+                    (void)bc_core_writer_write_cstring(&writer, spec->commands[index].name);
+                    (void)bc_core_writer_write_cstring(&writer, "'\n");
+                    bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+                }
                 return BC_RUNTIME_CLI_PARSE_ERROR;
             }
         }
     }
     if (spec->global_option_count > 64) {
-        fprintf(error_stream, "%s: internal error: too many global options\n", spec->program_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": internal error: too many global options\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+        }
         return BC_RUNTIME_CLI_PARSE_ERROR;
     }
 
@@ -337,7 +466,15 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
             const char* value = NULL;
             bool has_value = false;
             if (!bc_runtime_cli_parse_assignment(current, &name, &name_length, &value, &has_value)) {
-                fprintf(error_stream, "%s: malformed option '%s'\n", spec->program_name, current);
+                char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+                bc_core_writer_t writer;
+                if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+                    (void)bc_core_writer_write_cstring(&writer, ": malformed option '");
+                    (void)bc_core_writer_write_cstring(&writer, current);
+                    (void)bc_core_writer_write_cstring(&writer, "'\n");
+                    bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+                }
                 return BC_RUNTIME_CLI_PARSE_ERROR;
             }
 
@@ -354,14 +491,20 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
 
             if (command == NULL) {
                 if (!bc_runtime_cli_handle_assignment(&context, spec->global_options, spec->global_option_count, global_seen_stack,
-                                                     BC_RUNTIME_CLI_GLOBAL_PREFIX, name, name_length, value, has_value)) {
+                                                      BC_RUNTIME_CLI_GLOBAL_PREFIX, name, name_length, value, has_value)) {
                     return BC_RUNTIME_CLI_PARSE_ERROR;
                 }
             } else {
                 char command_prefix[BC_RUNTIME_CLI_KEY_BUFFER_SIZE];
                 size_t command_name_length = bc_runtime_cli_string_length(command->name);
                 if (command_name_length + 2 > sizeof(command_prefix)) {
-                    fprintf(error_stream, "%s: command name too long\n", spec->program_name);
+                    char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+                    bc_core_writer_t writer;
+                    if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                        (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+                        (void)bc_core_writer_write_cstring(&writer, ": command name too long\n");
+                        bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+                    }
                     return BC_RUNTIME_CLI_PARSE_ERROR;
                 }
                 for (size_t pi = 0; pi < command_name_length; pi++) {
@@ -371,7 +514,7 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
                 command_prefix[command_name_length + 1] = '\0';
 
                 if (!bc_runtime_cli_handle_assignment(&context, command->options, command->option_count, command_seen_stack, command_prefix,
-                                                     name, name_length, value, has_value)) {
+                                                      name, name_length, value, has_value)) {
                     return BC_RUNTIME_CLI_PARSE_ERROR;
                 }
             }
@@ -382,7 +525,15 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
         if (command == NULL) {
             command = bc_runtime_cli_find_command(spec, current);
             if (command == NULL) {
-                fprintf(error_stream, "%s: unknown command '%s'\n", spec->program_name, current);
+                char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+                bc_core_writer_t writer;
+                if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+                    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+                    (void)bc_core_writer_write_cstring(&writer, ": unknown command '");
+                    (void)bc_core_writer_write_cstring(&writer, current);
+                    (void)bc_core_writer_write_cstring(&writer, "'\n");
+                    bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+                }
                 return BC_RUNTIME_CLI_PARSE_ERROR;
             }
             index += 1;
@@ -395,7 +546,13 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
     }
 
     if (command == NULL) {
-        fprintf(error_stream, "%s: missing command\n", spec->program_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": missing command\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+        }
         return BC_RUNTIME_CLI_PARSE_ERROR;
     }
 
@@ -425,18 +582,42 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
     }
 
     if (positional_count < command->positional_min) {
-        fprintf(error_stream, "%s: command '%s' requires at least %zu positional argument(s)\n", spec->program_name, command->name,
-                command->positional_min);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": command '");
+            (void)bc_core_writer_write_cstring(&writer, command->name);
+            (void)bc_core_writer_write_cstring(&writer, "' requires at least ");
+            (void)bc_core_writer_write_unsigned_integer_64_decimal(&writer, (uint64_t)command->positional_min);
+            (void)bc_core_writer_write_cstring(&writer, " positional argument(s)\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+        }
         return BC_RUNTIME_CLI_PARSE_ERROR;
     }
     if (command->positional_max > 0 && positional_count > command->positional_max) {
-        fprintf(error_stream, "%s: command '%s' accepts at most %zu positional argument(s)\n", spec->program_name, command->name,
-                command->positional_max);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": command '");
+            (void)bc_core_writer_write_cstring(&writer, command->name);
+            (void)bc_core_writer_write_cstring(&writer, "' accepts at most ");
+            (void)bc_core_writer_write_unsigned_integer_64_decimal(&writer, (uint64_t)command->positional_max);
+            (void)bc_core_writer_write_cstring(&writer, " positional argument(s)\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+        }
         return BC_RUNTIME_CLI_PARSE_ERROR;
     }
 
     if (!bc_runtime_config_store_sort(store)) {
-        fprintf(error_stream, "%s: failed to sort config store\n", spec->program_name);
+        char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+        bc_core_writer_t writer;
+        if (bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+            (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+            (void)bc_core_writer_write_cstring(&writer, ": failed to sort config store\n");
+            bc_runtime_cli_drain_writer_to_stream(&writer, error_stream);
+        }
         return BC_RUNTIME_CLI_PARSE_ERROR;
     }
 
@@ -448,104 +629,154 @@ bc_runtime_cli_parse_status_t bc_runtime_cli_parse(const bc_runtime_cli_program_
     return BC_RUNTIME_CLI_PARSE_OK;
 }
 
-static void bc_runtime_cli_print_option_line(const bc_runtime_cli_option_spec_t* option, FILE* stream)
+static void bc_runtime_cli_print_option_line(const bc_runtime_cli_option_spec_t* option, bc_core_writer_t* writer)
 {
-    fprintf(stream, "  --%s", option->long_name);
+    (void)bc_core_writer_write_cstring(writer, "  --");
+    (void)bc_core_writer_write_cstring(writer, option->long_name);
     if (option->type != BC_RUNTIME_CLI_OPTION_FLAG) {
         const char* placeholder = option->value_placeholder != NULL ? option->value_placeholder : "VALUE";
-        fprintf(stream, "=%s", placeholder);
+        (void)bc_core_writer_write_char(writer, '=');
+        (void)bc_core_writer_write_cstring(writer, placeholder);
     }
-    fprintf(stream, "\n");
+    (void)bc_core_writer_write_char(writer, '\n');
     if (option->help_summary != NULL) {
-        fprintf(stream, "      %s\n", option->help_summary);
+        (void)bc_core_writer_write_cstring(writer, "      ");
+        (void)bc_core_writer_write_cstring(writer, option->help_summary);
+        (void)bc_core_writer_write_char(writer, '\n');
     }
     if (option->allowed_values != NULL) {
-        fprintf(stream, "      values:");
+        (void)bc_core_writer_write_cstring(writer, "      values:");
         for (size_t index = 0; option->allowed_values[index] != NULL; index++) {
-            fprintf(stream, " %s", option->allowed_values[index]);
+            (void)bc_core_writer_write_char(writer, ' ');
+            (void)bc_core_writer_write_cstring(writer, option->allowed_values[index]);
             if (option->allowed_values[index + 1] != NULL) {
-                fprintf(stream, ",");
+                (void)bc_core_writer_write_char(writer, ',');
             }
         }
-        fprintf(stream, "\n");
+        (void)bc_core_writer_write_char(writer, '\n');
     }
     if (option->required) {
-        fprintf(stream, "      (required)\n");
+        (void)bc_core_writer_write_cstring(writer, "      (required)\n");
     } else if (option->default_value != NULL) {
-        fprintf(stream, "      (default: %s)\n", option->default_value);
+        (void)bc_core_writer_write_cstring(writer, "      (default: ");
+        (void)bc_core_writer_write_cstring(writer, option->default_value);
+        (void)bc_core_writer_write_cstring(writer, ")\n");
     }
     if (option->type == BC_RUNTIME_CLI_OPTION_LIST) {
-        fprintf(stream, "      (repeatable)\n");
+        (void)bc_core_writer_write_cstring(writer, "      (repeatable)\n");
     }
 }
 
 void bc_runtime_cli_print_help_global(const bc_runtime_cli_program_spec_t* spec, FILE* stream)
 {
-    fprintf(stream, "%s", spec->program_name);
-    if (spec->summary != NULL) {
-        fprintf(stream, " - %s", spec->summary);
+    char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+        return;
     }
-    fprintf(stream, "\n\n");
 
-    fprintf(stream, "USAGE\n");
-    fprintf(stream, "  %s [global options] <command> [command options] [arguments...]\n\n", spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    if (spec->summary != NULL) {
+        (void)bc_core_writer_write_cstring(&writer, " - ");
+        (void)bc_core_writer_write_cstring(&writer, spec->summary);
+    }
+    (void)bc_core_writer_write_cstring(&writer, "\n\n");
+
+    (void)bc_core_writer_write_cstring(&writer, "USAGE\n");
+    (void)bc_core_writer_write_cstring(&writer, "  ");
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, " [global options] <command> [command options] [arguments...]\n\n");
 
     if (spec->global_option_count > 0) {
-        fprintf(stream, "GLOBAL OPTIONS\n");
+        (void)bc_core_writer_write_cstring(&writer, "GLOBAL OPTIONS\n");
         for (size_t index = 0; index < spec->global_option_count; index++) {
-            bc_runtime_cli_print_option_line(&spec->global_options[index], stream);
+            bc_runtime_cli_print_option_line(&spec->global_options[index], &writer);
         }
-        fprintf(stream, "  --help\n      print this help\n");
-        fprintf(stream, "  --version\n      print version and exit\n");
-        fprintf(stream, "\n");
+        (void)bc_core_writer_write_cstring(&writer, "  --help\n      print this help\n");
+        (void)bc_core_writer_write_cstring(&writer, "  --version\n      print version and exit\n");
+        (void)bc_core_writer_write_char(&writer, '\n');
     } else {
-        fprintf(stream, "GLOBAL OPTIONS\n");
-        fprintf(stream, "  --help\n      print this help\n");
-        fprintf(stream, "  --version\n      print version and exit\n\n");
+        (void)bc_core_writer_write_cstring(&writer, "GLOBAL OPTIONS\n");
+        (void)bc_core_writer_write_cstring(&writer, "  --help\n      print this help\n");
+        (void)bc_core_writer_write_cstring(&writer, "  --version\n      print version and exit\n\n");
     }
 
-    fprintf(stream, "COMMANDS\n");
+    (void)bc_core_writer_write_cstring(&writer, "COMMANDS\n");
     for (size_t index = 0; index < spec->command_count; index++) {
         const bc_runtime_cli_command_spec_t* command = &spec->commands[index];
-        fprintf(stream, "  %s", command->name);
+        (void)bc_core_writer_write_cstring(&writer, "  ");
+        (void)bc_core_writer_write_cstring(&writer, command->name);
         if (command->summary != NULL) {
-            fprintf(stream, " - %s", command->summary);
+            (void)bc_core_writer_write_cstring(&writer, " - ");
+            (void)bc_core_writer_write_cstring(&writer, command->summary);
         }
-        fprintf(stream, "\n");
+        (void)bc_core_writer_write_char(&writer, '\n');
     }
-    fprintf(stream, "\nRun '%s <command> --help' for details on a command.\n", spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, "\nRun '");
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, " <command> --help' for details on a command.\n");
+
+    bc_runtime_cli_drain_writer_to_stream(&writer, stream);
 }
 
-void bc_runtime_cli_print_help_command(const bc_runtime_cli_program_spec_t* spec, const bc_runtime_cli_command_spec_t* command, FILE* stream)
+void bc_runtime_cli_print_help_command(const bc_runtime_cli_program_spec_t* spec, const bc_runtime_cli_command_spec_t* command,
+                                       FILE* stream)
 {
-    fprintf(stream, "%s %s", spec->program_name, command->name);
-    if (command->summary != NULL) {
-        fprintf(stream, " - %s", command->summary);
+    char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+        return;
     }
-    fprintf(stream, "\n\n");
 
-    fprintf(stream, "USAGE\n");
-    fprintf(stream, "  %s [global options] %s [options]", spec->program_name, command->name);
-    if (command->positional_usage != NULL) {
-        fprintf(stream, " %s", command->positional_usage);
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_char(&writer, ' ');
+    (void)bc_core_writer_write_cstring(&writer, command->name);
+    if (command->summary != NULL) {
+        (void)bc_core_writer_write_cstring(&writer, " - ");
+        (void)bc_core_writer_write_cstring(&writer, command->summary);
     }
-    fprintf(stream, "\n\n");
+    (void)bc_core_writer_write_cstring(&writer, "\n\n");
+
+    (void)bc_core_writer_write_cstring(&writer, "USAGE\n");
+    (void)bc_core_writer_write_cstring(&writer, "  ");
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, " [global options] ");
+    (void)bc_core_writer_write_cstring(&writer, command->name);
+    (void)bc_core_writer_write_cstring(&writer, " [options]");
+    if (command->positional_usage != NULL) {
+        (void)bc_core_writer_write_char(&writer, ' ');
+        (void)bc_core_writer_write_cstring(&writer, command->positional_usage);
+    }
+    (void)bc_core_writer_write_cstring(&writer, "\n\n");
 
     if (command->option_count > 0) {
-        fprintf(stream, "OPTIONS\n");
+        (void)bc_core_writer_write_cstring(&writer, "OPTIONS\n");
         for (size_t index = 0; index < command->option_count; index++) {
-            bc_runtime_cli_print_option_line(&command->options[index], stream);
+            bc_runtime_cli_print_option_line(&command->options[index], &writer);
         }
-        fprintf(stream, "  --help\n      print this help\n\n");
+        (void)bc_core_writer_write_cstring(&writer, "  --help\n      print this help\n\n");
     } else {
-        fprintf(stream, "OPTIONS\n  --help\n      print this help\n\n");
+        (void)bc_core_writer_write_cstring(&writer, "OPTIONS\n  --help\n      print this help\n\n");
     }
 
-    fprintf(stream, "Run '%s --help' for global options.\n", spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, "Run '");
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_cstring(&writer, " --help' for global options.\n");
+
+    bc_runtime_cli_drain_writer_to_stream(&writer, stream);
 }
 
 void bc_runtime_cli_print_version(const bc_runtime_cli_program_spec_t* spec, FILE* stream)
 {
+    char buffer[BC_RUNTIME_CLI_OUTPUT_BUFFER_SIZE] BC_CACHE_LINE_ALIGNED;
+    bc_core_writer_t writer;
+    if (!bc_core_writer_init_buffer_only(&writer, buffer, sizeof(buffer))) {
+        return;
+    }
     const char* version = spec->version != NULL ? spec->version : "unknown";
-    fprintf(stream, "%s %s\n", spec->program_name, version);
+    (void)bc_core_writer_write_cstring(&writer, spec->program_name);
+    (void)bc_core_writer_write_char(&writer, ' ');
+    (void)bc_core_writer_write_cstring(&writer, version);
+    (void)bc_core_writer_write_char(&writer, '\n');
+    bc_runtime_cli_drain_writer_to_stream(&writer, stream);
 }
