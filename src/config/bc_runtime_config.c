@@ -595,25 +595,6 @@ bool bc_runtime_config_get_integer(const bc_runtime_t* application, const char* 
     return true;
 }
 
-static bool case_insensitive_equal(const char* string_value, size_t string_length, const char* target, size_t target_length)
-{
-    if (string_length != target_length) {
-        return false;
-    }
-
-    for (size_t i = 0; i < string_length; i++) {
-        char lowered = string_value[i];
-        if (lowered >= 'A' && lowered <= 'Z') {
-            lowered = (char)(lowered | 0x20);
-        }
-        if (lowered != target[i]) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool bc_runtime_config_get_boolean(const bc_runtime_t* application, const char* key, bool* out_value)
 {
     const char* string_value = NULL;
@@ -626,14 +607,28 @@ bool bc_runtime_config_get_boolean(const bc_runtime_t* application, const char* 
         return false;
     }
 
-    if (case_insensitive_equal(string_value, string_length, "true", 4) || case_insensitive_equal(string_value, string_length, "1", 1) ||
-        case_insensitive_equal(string_value, string_length, "yes", 3)) {
+    bool equals_true = false;
+    bool equals_one = false;
+    bool equals_yes = false;
+    if (!bc_core_equal_case_insensitive_ascii(string_value, string_length, "true", 4, &equals_true) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "1", 1, &equals_one) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "yes", 3, &equals_yes)) {
+        return false;
+    }
+    if (equals_true || equals_one || equals_yes) {
         *out_value = true;
         return true;
     }
 
-    if (case_insensitive_equal(string_value, string_length, "false", 5) || case_insensitive_equal(string_value, string_length, "0", 1) ||
-        case_insensitive_equal(string_value, string_length, "no", 2)) {
+    bool equals_false = false;
+    bool equals_zero = false;
+    bool equals_no = false;
+    if (!bc_core_equal_case_insensitive_ascii(string_value, string_length, "false", 5, &equals_false) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "0", 1, &equals_zero) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "no", 2, &equals_no)) {
+        return false;
+    }
+    if (equals_false || equals_zero || equals_no) {
         *out_value = false;
         return true;
     }
@@ -728,14 +723,28 @@ bool bc_runtime_config_store_get_boolean(const bc_runtime_config_store_t* store,
         return false;
     }
 
-    if (case_insensitive_equal(string_value, string_length, "true", 4) || case_insensitive_equal(string_value, string_length, "1", 1) ||
-        case_insensitive_equal(string_value, string_length, "yes", 3)) {
+    bool equals_true = false;
+    bool equals_one = false;
+    bool equals_yes = false;
+    if (!bc_core_equal_case_insensitive_ascii(string_value, string_length, "true", 4, &equals_true) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "1", 1, &equals_one) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "yes", 3, &equals_yes)) {
+        return false;
+    }
+    if (equals_true || equals_one || equals_yes) {
         *out_value = true;
         return true;
     }
 
-    if (case_insensitive_equal(string_value, string_length, "false", 5) || case_insensitive_equal(string_value, string_length, "0", 1) ||
-        case_insensitive_equal(string_value, string_length, "no", 2)) {
+    bool equals_false = false;
+    bool equals_zero = false;
+    bool equals_no = false;
+    if (!bc_core_equal_case_insensitive_ascii(string_value, string_length, "false", 5, &equals_false) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "0", 1, &equals_zero) ||
+        !bc_core_equal_case_insensitive_ascii(string_value, string_length, "no", 2, &equals_no)) {
+        return false;
+    }
+    if (equals_false || equals_zero || equals_no) {
         *out_value = false;
         return true;
     }

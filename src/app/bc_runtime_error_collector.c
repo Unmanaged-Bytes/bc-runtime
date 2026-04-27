@@ -8,7 +8,6 @@
 
 #include <errno.h>
 #include <stdatomic.h>
-#include <string.h>
 #include <unistd.h>
 
 #define BC_RUNTIME_ERROR_COLLECTOR_PATH_CAPACITY ((size_t)512)
@@ -110,17 +109,50 @@ void bc_runtime_error_collector_flush_to_stderr(const bc_runtime_error_collector
     }
 
     for (size_t index = 0; index < record_count; index++) {
-        const char* reason = records[index].errno_value != 0 ? strerror(records[index].errno_value) : "error";
-        if (!write_string(&writer, prefix)) { break; }
-        if (!BC_CORE_WRITER_PUTS(&writer, ": ")) { break; }
-        if (records[index].stage != NULL) {
-            if (!write_string(&writer, records[index].stage)) { break; }
-            if (!BC_CORE_WRITER_PUTS(&writer, ": ")) { break; }
+        char reason_buffer[128];
+        const char* reason = "error";
+        size_t reason_length = 0;
+        if (records[index].errno_value != 0) {
+            bc_core_error_code_t error_code = BC_CORE_ERROR_NONE;
+            if (bc_core_error_from_system_errno(records[index].errno_value, &error_code) &&
+                bc_core_error_describe(error_code, reason_buffer, sizeof(reason_buffer), &reason_length)) {
+                reason = reason_buffer;
+            } else {
+                reason_length = 0;
+            }
         }
-        if (!write_string(&writer, records[index].path)) { break; }
-        if (!BC_CORE_WRITER_PUTS(&writer, ": ")) { break; }
-        if (!write_string(&writer, reason)) { break; }
-        if (!bc_core_writer_write_char(&writer, '\n')) { break; }
+        if (!write_string(&writer, prefix)) {
+            break;
+        }
+        if (!BC_CORE_WRITER_PUTS(&writer, ": ")) {
+            break;
+        }
+        if (records[index].stage != NULL) {
+            if (!write_string(&writer, records[index].stage)) {
+                break;
+            }
+            if (!BC_CORE_WRITER_PUTS(&writer, ": ")) {
+                break;
+            }
+        }
+        if (!write_string(&writer, records[index].path)) {
+            break;
+        }
+        if (!BC_CORE_WRITER_PUTS(&writer, ": ")) {
+            break;
+        }
+        if (reason == reason_buffer) {
+            if (!bc_core_writer_write_bytes(&writer, reason_buffer, reason_length)) {
+                break;
+            }
+        } else {
+            if (!write_string(&writer, reason)) {
+                break;
+            }
+        }
+        if (!bc_core_writer_write_char(&writer, '\n')) {
+            break;
+        }
     }
 
     (void)bc_core_writer_destroy(&writer);
