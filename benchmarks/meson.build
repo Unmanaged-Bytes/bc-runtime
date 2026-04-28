@@ -23,3 +23,11 @@ benchmark('bench_bc_runtime_logging',
   ),
   timeout : 120,
 )
+
+benchmark('bench_bc_runtime_vs_libc',
+  executable('bench_bc_runtime_vs_libc', 'bench_bc_runtime_vs_libc.c',
+    include_directories : bc_runtime_public_inc,
+    dependencies : bench_deps,
+  ),
+  timeout : 300,
+)
